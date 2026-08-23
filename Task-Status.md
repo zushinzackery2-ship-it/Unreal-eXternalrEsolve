@@ -10,7 +10,7 @@
 - [已完成] 所有本次新增或重构的物理模块头文件均不超过 300 行
 - [已完成] 使用 MinGW C++20 对物理模块聚合入口及 9 个兼容头逐一执行语法验证
 - [已完成] 以 Vernal 身份提交并推送 `cursor/refactor-physx-chaos-3800`
-- [待完成] 创建到 `main` 的 draft PR
+- [阻塞] 创建到 `main` 的 draft PR：当前运行令牌对 Pull Request API 返回 HTTP 403
 
 ## 2. 已解决问题/已完成需求
 
@@ -33,3 +33,4 @@
 - 物理模块兼容头聚合验证和逐头独立验证均通过；临时大小写兼容头与私有访问器桩未提交
 - 整体 `xrd.hpp` 的附加验证仍会命中既有 dump 代码的 MinGW `std::ofstream(std::wstring)` 不兼容，与本次物理模块改动无关
 - 仓库中的 SharedMem/Driver 访问器被 `.gitignore` 标为私有；验证时使用了临时接口桩，未引入或提交跨项目代码
+- Draft PR 创建入口：`https://github.com/zushinzackery2-ship-it/Xrd-eXternalrEsolve/pull/new/cursor/refactor-physx-chaos-3800`
