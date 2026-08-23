@@ -8,6 +8,8 @@
 - [已完成] 保持原公共入口并新增 `GetAutoInitStage()` 状态查询
 - [已完成] 更新 README 生命周期和目录说明
 - [已完成] 使用 MinGW C++20 对生命周期公共头执行语法验证
+- [已完成] 以 Vernal 身份提交并推送 `cursor/refactor-init-lifecycle-3800`
+- [阻塞] GitHub draft PR 创建：运行令牌对 Pull Request API 返回 HTTP 403
 
 ## 2. 已解决问题/已完成需求
 
@@ -28,3 +30,4 @@
 - 扫描阶段：`include/xrd/init/phases/`
 - 验证命令：`x86_64-w64-mingw32-g++-posix -std=c++20 -fsyntax-only`
 - 仓库中的 SharedMem/Driver 访问器被 `.gitignore` 标为私有；验证时使用了临时接口桩，未引入或提交跨项目代码
+- Draft PR 创建入口：`https://github.com/zushinzackery2-ship-it/Xrd-eXternalrEsolve/pull/new/cursor/refactor-init-lifecycle-3800`
