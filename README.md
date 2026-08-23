@@ -95,9 +95,9 @@
 | **PhysX** | `PhysXReader(mem, globalPtr)` | 构造 PhysX 读取器 |
 |  | `ReadStaticCollision(outData)` | 读取所有 static actor 碰撞数据（仅 eSIMULATION_SHAPE） |
 |  | `ReadActorData(addr, outData)` | 读取单个 Actor 的 pose + shapes |
-|  | `ReadConvexMeshData(addr, outData)` | 读取 ConvexMesh 顶点与边数据 |
+|  | `ToCollisionScene(pxData)` | 转换为引擎无关的碰撞场景 |
 | **Chaos** | `InitChaosOffsets(ctx)` | 反射发现 Chaos 碰撞偏移 |
-|  | `ChaosReader::ReadAllActors()` | 读取所有 Chaos 碰撞 Actor |
+|  | `ChaosReader::ReadStaticCollision(world, scene)` | 读取所有已加载 Level 的 Chaos 碰撞 Actor |
 | **Embree** | `RaycastScene::Build(shapes)` | 从碰撞体构建 BVH |
 |  | `RaycastScene::IsOccluded(o, t)` | 射线遮挡查询 |
 | **SDK 导出** | `DumpSdk(path)` | 完整导出 (CppSDK + Dump + Mapping) |
@@ -344,8 +344,8 @@ Xrd-eXternalrEsolve/
 │       │   │   ├── runtime_scan.hpp             #     运行时符号 / 物理后端
 │       │   │   ├── vector_precision.hpp         #     FVector 精度
 │       │   │   └── pipeline.hpp                 #     阶段编排
-│       │   ├── init_chaos_scan.hpp              #   Chaos 小偏移自动发现
-│       │   ├── init_chaos.hpp                   #   Chaos 偏移反射发现
+│       │   ├── init_chaos_scan.hpp              #   Chaos 扫描兼容入口
+│       │   ├── init_chaos.hpp                   #   Chaos 初始化兼容入口
 │       │   ├── init_world_chain.hpp             #   World 链偏移反射发现
 │       │   └── init_helpers.hpp                 #   初始化辅助工具
 │       ├── engine/                              # UE 对象封装
@@ -364,13 +364,21 @@ Xrd-eXternalrEsolve/
 │       │       ├── bones_offsets.hpp            #     SkinnedMeshComponent 范围限定扫描
 │       │       └── bones_names.hpp              #     骨骼名称读取与缓存
 │       ├── physx/                               # PhysX 碰撞读取
-│       │   ├── physx_types.hpp                  #   PhysX 结构定义 & 偏移
-│       │   ├── physx_reader.hpp                 #   PhysXReader 远程读取器
-│       │   └── physx_pe.hpp                     #   PhysX DLL PE 解析 (RVA 定位)
+│       │   ├── physx_types.hpp                  #   类型兼容 re-export
+│       │   ├── physx_reader.hpp                 #   Reader 兼容 re-export
+│       │   ├── physx_pe.hpp                     #   Discovery 兼容 re-export
+│       │   ├── physx_convex.hpp                 #   Topology 兼容 re-export
+│       │   ├── types/                           #   别名、偏移、数据与转换
+│       │   ├── discovery/                       #   PE 导出与全局实例定位
+│       │   ├── topology/                        #   Convex 拓扑提取
+│       │   └── reader/                          #   scene/pose/shapes/convex
 │       ├── chaos/                               # Chaos 碰撞读取
-│       │   ├── chaos_types.hpp                  #   Chaos 结构定义
-│       │   ├── chaos_reflection.hpp             #   Chaos 反射辅助
-│       │   └── chaos_reader.hpp                 #   ChaosReader 远程读取器
+│       │   ├── chaos_types.hpp                  #   类型兼容 re-export
+│       │   ├── chaos_reflection.hpp             #   反射兼容 re-export
+│       │   ├── chaos_reader.hpp                 #   Reader 兼容 re-export
+│       │   ├── types/                           #   ChaosOffsets / WorldPose
+│       │   ├── discovery/                       #   反射、扫描与初始化
+│       │   └── reader/                          #   body/pose/elements 分段读取
 │       ├── collision/                           # 碰撞线框
 │       │   └── collision_types.hpp              #   碰撞体类型与线框数据结构
 │       ├── embree/                              # Embree 遮挡检测
@@ -436,7 +444,7 @@ Xrd-eXternalrEsolve/
 - **结构定义**：所有偏移字段集中在 `core/context.hpp` 的 `UEOffsets` 结构体
 - **偏移扫描**：`resolve/` 下按职责分组（globals / uobject / property / runtime），`init/phases/` 负责阶段适配，`init/lifecycle/controller.hpp` 负责状态转换
 - **FVector 精度检测**：通过反射读取 `RelativeLocation.ElementSize`（24=double, 12=float），逻辑在 `init/phases/vector_precision.hpp`
-- **物理后端**：运行时自动检测 PhysX / Chaos，分别由 `physx/` 和 `chaos/` 模块处理
+- **物理后端**：运行时自动检测 PhysX / Chaos；类型、发现、拓扑与读取职责分别位于 `physx/` 和 `chaos/` 的子目录，旧入口仅负责兼容 re-export
 
 ## 常见问题
 

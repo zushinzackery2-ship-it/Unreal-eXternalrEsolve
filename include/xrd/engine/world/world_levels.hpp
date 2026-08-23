@@ -9,6 +9,18 @@ namespace xrd
 {
 namespace detail
 {
+    inline void AppendCanonicalUniqueLevel(
+        uptr levelPtr,
+        std::unordered_set<uptr>& seenLevels,
+        std::vector<uptr>& outLevels)
+    {
+        if (IsCanonicalUserPtr(levelPtr) &&
+            seenLevels.insert(levelPtr).second)
+        {
+            outLevels.push_back(levelPtr);
+        }
+    }
+
     inline bool IsLevelObject(uptr levelPtr)
     {
         if (!IsCanonicalUserPtr(levelPtr))
@@ -60,6 +72,73 @@ namespace detail
     }
 } // namespace detail
 
+inline bool GetLoadedLevelsForWorld(
+    const IMemoryAccessor& mem,
+    const UEOffsets& offsets,
+    uptr world,
+    std::vector<uptr>& outLevels)
+{
+    outLevels.clear();
+    if (!IsCanonicalUserPtr(world))
+    {
+        return false;
+    }
+
+    std::unordered_set<uptr> seenLevels;
+    seenLevels.reserve(16);
+
+    if (offsets.UWorld_PersistentLevel >= 0)
+    {
+        uptr persistentLevel = 0;
+        if (ReadPtr(
+                mem,
+                world + offsets.UWorld_PersistentLevel,
+                persistentLevel))
+        {
+            detail::AppendCanonicalUniqueLevel(
+                persistentLevel,
+                seenLevels,
+                outLevels);
+        }
+    }
+
+    if (offsets.UWorld_Levels >= 0)
+    {
+        uptr levelsData = 0;
+        i32 levelCount = 0;
+        if (ReadPtr(
+                mem,
+                world + offsets.UWorld_Levels,
+                levelsData) &&
+            ReadValue(
+                mem,
+                world + offsets.UWorld_Levels + 8,
+                levelCount) &&
+            IsCanonicalUserPtr(levelsData) &&
+            levelCount > 0 &&
+            levelCount <= 4096)
+        {
+            std::vector<uptr> levels(
+                static_cast<std::size_t>(levelCount));
+            if (mem.Read(
+                    levelsData,
+                    levels.data(),
+                    levels.size() * sizeof(uptr)))
+            {
+                for (uptr levelPtr : levels)
+                {
+                    detail::AppendCanonicalUniqueLevel(
+                        levelPtr,
+                        seenLevels,
+                        outLevels);
+                }
+            }
+        }
+    }
+
+    return !outLevels.empty();
+}
+
 inline bool GetLoadedLevelsForWorld(uptr world, std::vector<uptr>& outLevels)
 {
     outLevels.clear();
@@ -110,51 +189,79 @@ inline bool GetLoadedLevels(std::vector<uptr>& outLevels)
     return GetLoadedLevelsForWorld(GetUWorld(), outLevels);
 }
 
-inline std::vector<uptr> GetAllActors()
+inline bool GetAllActors(
+    const IMemoryAccessor& mem,
+    const UEOffsets& offsets,
+    uptr world,
+    std::vector<uptr>& result)
 {
-    std::vector<uptr> result;
-
+    result.clear();
     std::vector<uptr> levels;
-    if (!GetLoadedLevels(levels))
+    if (!GetLoadedLevelsForWorld(
+            mem,
+            offsets,
+            world,
+            levels))
     {
-        return result;
+        return false;
     }
 
     std::unordered_set<uptr> seenActors;
     seenActors.reserve(8192);
-
     for (uptr levelPtr : levels)
     {
         ActorArray actorArray{};
-        if (!GetLevelActors(levelPtr, actorArray))
+        if (!GetLevelActors(
+                mem,
+                offsets,
+                levelPtr,
+                actorArray))
         {
             continue;
         }
 
-        std::vector<uptr> rawActorPtrs(static_cast<std::size_t>(actorArray.count));
-        if (!Mem().Read(
-            actorArray.data,
-            rawActorPtrs.data(),
-            rawActorPtrs.size() * sizeof(uptr)))
+        std::vector<uptr> actorPtrs(
+            static_cast<std::size_t>(actorArray.count));
+        if (!mem.Read(
+                actorArray.data,
+                actorPtrs.data(),
+                actorPtrs.size() * sizeof(uptr)))
         {
             continue;
         }
 
-        for (uptr actorPtr : rawActorPtrs)
+        for (uptr actorPtr : actorPtrs)
         {
-            if (!IsCanonicalUserPtr(actorPtr))
-            {
-                continue;
-            }
-
-            if (seenActors.insert(actorPtr).second)
+            if (IsCanonicalUserPtr(actorPtr) &&
+                seenActors.insert(actorPtr).second)
             {
                 result.push_back(actorPtr);
             }
         }
     }
 
+    return true;
+}
+
+inline std::vector<uptr> GetAllActors(
+    const IMemoryAccessor& mem,
+    const UEOffsets& offsets,
+    uptr world)
+{
+    std::vector<uptr> result;
+    GetAllActors(mem, offsets, world, result);
     return result;
+}
+
+inline std::vector<uptr> GetAllActors()
+{
+    const uptr world = GetUWorld();
+    std::vector<uptr> levels;
+    if (!GetLoadedLevelsForWorld(world, levels))
+    {
+        return {};
+    }
+    return GetAllActors(Mem(), Off(), world);
 }
 
 } // namespace xrd

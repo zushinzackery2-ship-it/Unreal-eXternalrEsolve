@@ -2,32 +2,31 @@
 
 ## 1. 当前任务/需求/待办清单
 
-- [已完成] 重构 `include/xrd/init/` 初始化生命周期（WinAPI / SharedMem / Driver）
-- [已完成] 拆分扫描阶段，所有 `init/` 头文件均不超过 300 行
-- [已完成] 明确取消、失败、重试和 `ResetContext()` 回滚边界
-- [已完成] 保持原公共入口并新增 `GetAutoInitStage()` 状态查询
-- [已完成] 更新 README 生命周期和目录说明
-- [已完成] 使用 MinGW C++20 对生命周期公共头执行语法验证
-- [已完成] 以 Vernal 身份提交并推送 `cursor/refactor-init-lifecycle-3800`
-- [阻塞] GitHub draft PR 创建：运行令牌对 Pull Request API 返回 HTTP 403
+- [已完成] 将 PhysX 类型、发现、拓扑和 Reader 拆分到独立子目录
+- [已完成] 将 Chaos 类型、发现、初始化和 Reader 拆分到独立子目录
+- [已完成] 将 `init_chaos.hpp` / `init_chaos_scan.hpp` 收敛为兼容入口
+- [已完成] `ChaosReader` 复用 `world_levels` 的 Level / Actor 枚举
+- [已完成] 保留 PhysX / Chaos 顶层头和公共 API
+- [已完成] 所有本次新增或重构的物理模块头文件均不超过 300 行
+- [待验证] 使用 MinGW C++20 执行公共入口语法验证
+- [待完成] 以 Vernal 身份提交、推送并创建到 `main` 的 draft PR
 
 ## 2. 已解决问题/已完成需求
 
-- `AutoInit` / `AutoInitSharedMem` 共用同一状态机；`AutoInitDriver` 保持兼容别名
-- 删除 445 行、混合多阶段职责的 `init_common.hpp`
-- 初始化使用事务回滚：失败或取消时统一释放后端、句柄和发现缓存
-- `ctx.inited` 只在最终验证完成后置位；扫描期临时访问仅允许初始化线程
-- 每轮重试刷新 PE 段快照、偏移和名称/属性缓存，避免复用失败轮次的旧数据
-- 取消回调改为原子存取，且不再直接调用 `ResetContext()`
-- 取消检查覆盖重试等待、主要扫描阶段边界和 UEnum 长枚举循环
-- 生命周期入口使用 `Context::mtx` 串行化，避免多个 AutoInit 同时重置全局上下文
+- `physx_reader.hpp` 从 450 行降为兼容 re-export，读取流程按 scene、pose、shape、convex 拆分
+- `physx_types.hpp`、`physx_pe.hpp`、`physx_convex.hpp` 均改为薄兼容入口
+- `chaos_reader.hpp` 从 656 行降为兼容 re-export，读取流程按 body、pose、primitive、convex 拆分
+- `chaos_reflection.hpp` 从 305 行降为薄兼容入口，反射辅助、fallback 和发现流程解耦
+- Chaos 初始化实现迁入 `chaos/discovery/`，`init/` 不再持有物理模块实现
+- 删除 `ChaosReader` 内重复的 `ReadLoadedLevels` / `ReadLevelActors` / 去重逻辑
+- `world_levels` 新增显式 `IMemoryAccessor` / `UEOffsets` 重载，保持 Reader 注入式访问器语义
+- PhysX Convex 拓扑读取改用 `memcpy` 解析非对齐字段，避免未对齐指针解引用
 
 ## 3. 经验/教训/高价值信息
 
-- 项目：Xrd-eXternalrEsolve header-only C++ 库，生命周期核心在 `include/xrd/init/`
-- 生命周期控制：`include/xrd/init/lifecycle/controller.hpp`
-- 生命周期状态：`include/xrd/init/lifecycle/state.hpp`
-- 扫描阶段：`include/xrd/init/phases/`
+- 项目保持 header-only；兼容入口只 include 子模块，不引入编译单元
+- PhysX 子模块：`types/`、`discovery/`、`topology/`、`reader/`
+- Chaos 子模块：`types/`、`discovery/`、`reader/`
+- `ChaosReader` 的 Actor 枚举入口为显式访问器版本 `GetAllActors(mem, offsets, world, out)`
 - 验证命令：`x86_64-w64-mingw32-g++-posix -std=c++20 -fsyntax-only`
 - 仓库中的 SharedMem/Driver 访问器被 `.gitignore` 标为私有；验证时使用了临时接口桩，未引入或提交跨项目代码
-- Draft PR 创建入口：`https://github.com/zushinzackery2-ship-it/Xrd-eXternalrEsolve/pull/new/cursor/refactor-init-lifecycle-3800`

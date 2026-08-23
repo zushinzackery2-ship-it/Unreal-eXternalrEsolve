@@ -13,6 +13,41 @@ struct ActorArray
     i32  count = 0;
 };
 
+inline bool GetLevelActors(
+    const IMemoryAccessor& mem,
+    const UEOffsets& offsets,
+    uptr level,
+    ActorArray& out)
+{
+    out = {};
+    if (!IsCanonicalUserPtr(level) || offsets.ULevel_Actors < 0)
+    {
+        return false;
+    }
+
+    if (!ReadPtr(
+            mem,
+            level + offsets.ULevel_Actors,
+            out.data) ||
+        !ReadValue(
+            mem,
+            level + offsets.ULevel_Actors + 8,
+            out.count))
+    {
+        out = {};
+        return false;
+    }
+
+    if (!IsCanonicalUserPtr(out.data) ||
+        out.count <= 0 ||
+        out.count >= 200000)
+    {
+        out = {};
+        return false;
+    }
+    return true;
+}
+
 inline bool GetPersistentLevel(uptr world, uptr& outLevel)
 {
     outLevel = 0;
@@ -73,9 +108,7 @@ inline bool GetLevelActors(uptr level, ActorArray& out)
 
     if (off.ULevel_Actors != -1)
     {
-        GReadPtr(level + off.ULevel_Actors, out.data);
-        GReadI32(level + off.ULevel_Actors + 8, out.count);
-        return IsCanonicalUserPtr(out.data) && out.count > 0;
+        return GetLevelActors(Mem(), off, level, out);
     }
 
     for (i32 actorsOff = 0x80; actorsOff <= 0x150; actorsOff += 8)
