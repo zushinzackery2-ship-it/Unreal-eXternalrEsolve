@@ -18,7 +18,7 @@ namespace xrd
 
 inline i32 GetTotalObjectCount()
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         return 0;
     }
@@ -27,7 +27,7 @@ inline i32 GetTotalObjectCount()
 
 inline uptr GetObjectByIndex(i32 index)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         return 0;
     }

@@ -25,9 +25,20 @@ inline void SetGWorld(uptr rva)
 
 // ─── 手动偏移设置（通过 VA） ───
 
-inline void SetGObjectsVA(uptr va) { Ctx().off.GObjects = va; }
-inline void SetGNamesVA(uptr va)   { Ctx().off.GNames = va; }
-inline void SetGWorldVA(uptr va)   { Ctx().off.GWorld = va; }
+inline void SetGObjectsVA(uptr va)
+{
+    Ctx().off.GObjects = va;
+}
+
+inline void SetGNamesVA(uptr va)
+{
+    Ctx().off.GNames = va;
+}
+
+inline void SetGWorldVA(uptr va)
+{
+    Ctx().off.GWorld = va;
+}
 
 // ─── 查询 ───
 

@@ -38,7 +38,7 @@
 | 功能 | 说明 |
 |:-----|:-----|
 | **Header-Only** | 单一入口 `#include <xrd.hpp>`，无需编译库文件 |
-| **全自动偏移发现** | `AutoInit()` 六阶段扫描 GObjects / GNames / GWorld / ProcessEvent / AppendString / GCanvas / PlayerController / Pawn / CameraManager 等全部关键偏移 |
+| **全自动偏移发现** | `AutoInit()` 通过事务式生命周期状态机扫描 GObjects / GNames / GWorld / ProcessEvent / AppendString / GCanvas / PlayerController / Pawn / CameraManager 等全部关键偏移 |
 | **访问器抽象** | `IMemoryAccessor` 接口解耦算法与内存后端，内置 WinAPI / SharedMem 两套实现，并支持自定义扩展 |
 | **线程安全** | 名称缓存/属性偏移缓存均使用 `shared_mutex`，支持多线程并发读取 |
 | **SDK 导出** | 生成与 Dumper-7 格式对齐的 CppSDK，含 `#pragma pack` / `alignas` / trailing padding |
@@ -49,7 +49,7 @@
 | **W2S** | 内置 WorldToScreen 投影 |
 | **反射式字段访问** | `ReadActorFieldPtr/Int32/Float` 通过属性名自动查找偏移（带缓存），无需硬编码 |
 | **线程局部访问器** | `SetThreadMemAccessor()` 通过 TLS 槽将当前线程绑定到独立通道，`Mem()` 自动返回线程局部覆盖，多线程零 mutex 争抢 |
-| **可取消初始化** | `SetAutoInitCancelCallback()` 支持在重试等待和扫描阶段中断 `AutoInit()`，取消时自动 `ResetContext()` |
+| **可取消初始化** | `SetAutoInitCancelCallback()` 支持在重试等待和扫描阶段边界中断 `AutoInit()`，取消后由生命周期控制器统一回滚上下文 |
 | **PhysX 碰撞读取** | 远程读取 PhysX 3.4 场景数据（Actor/Shape/Geometry），支持 Box/Sphere/Capsule/ConvexMesh 碰撞体 |
 | **Chaos 碰撞读取** | 远程读取 UE5 Chaos 物理场景（FPhysScene_Chaos），通过反射自动发现 BodyInstance/PhysicsProxy/AggGeom 偏移 |
 | **Embree 遮挡检测** | 基于 Embree 的 raycast 遮挡查询，支持碰撞体曲面细分与 BVH 加速 |
@@ -68,6 +68,8 @@
 |  | `Off()` | 返回偏移结构 `UEOffsets` |
 |  | `SetGObjects(rva)` / `SetGNames(rva)` / `SetGWorld(rva)` | 手动设置 RVA（AutoInit 前调用） |
 |  | `SetAutoInitCancelCallback(callback)` | 设置取消回调，在 AutoInit 重试与扫描流程中提前终止 |
+|  | `GetAutoInitCancelCallback()` | 获取当前取消回调 |
+|  | `GetAutoInitStage()` | 获取当前生命周期阶段（附加、扫描、验证、重试或终态） |
 | **线程绑定** | `SetThreadMemAccessor(accessor)` | 将当前线程的 `Mem()` 绑定到指定访问器（多通道隔离） |
 |  | `ClearThreadMemAccessor()` | 清除当前线程绑定，恢复使用全局通道 |
 | **World** | `GetUWorld()` | 获取 UWorld 指针 |
@@ -240,53 +242,57 @@ IMemoryAccessor（纯虚接口）
 
 ---
 
-## AutoInit 六阶段流程
+## AutoInit 生命周期
 
 ```
 AutoInit()
 │
-├─ Phase 1: 进程附加
-│   ├─ 枚举进程、打开句柄
-│   ├─ 获取主模块基址
-│   └─ 缓存 .text / .data / .rdata PE 段
+├─ Resetting
+│   └─ 关闭旧后端、清空上下文和发现缓存
 │
-├─ Phase 2: GObjects / GNames 定位
-│   ├─ 扫描 .data 段候选地址
-│   ├─ 验证 FUObjectArray 布局 (对象数/最大数/分块)
-│   └─ 验证 NamePool 含 "None" 条目
+├─ AttachingProcess
+│   ├─ 查找目标进程
+│   ├─ 建立 WinAPI / SharedMem 后端
+│   └─ 获取主模块
 │
-├─ Phase 3: 结构偏移发现
-│   ├─ UObject (Flags/Index/Class/Name/Outer)
-│   ├─ UStruct (SuperStruct/Children/ChildProperties/Size)
-│   ├─ FField (Name/Class/Next/CastFlags)
-│   ├─ Property (Offset/Size/ArrayDim/ElementSize)
-│   ├─ 类型化属性 (StructProperty/ObjectProperty/EnumProperty/...)
-│   ├─ UFunction (FunctionFlags/Func)
-│   ├─ UClass (ClassFlags/DefaultObject/Interfaces)
-│   └─ UEnum::Names
+├─ ScanningGlobals
+│   ├─ 重新缓存 .text / .data / .rdata PE 段
+│   └─ 定位 GObjects / GNames
 │
-├─ Phase 4: UField::Next 推导
+├─ DiscoveringObjectOffsets
+│   ├─ UObject / UStruct / FField
+│   ├─ Property / UFunction / UClass
+│   └─ UEnum::Names / UField::Next
 │
-├─ Phase 5: 运行时扫描
-│   ├─ GWorld 定位 (UWorld + 已加载 Levels 的 Actor 链聚合验证)
+├─ ScanningRuntime
+│   ├─ GWorld / DebugCanvasObject
 │   ├─ ProcessEvent VTable 索引扫描
 │   ├─ AppendString 扫描
-│   ├─ FVector 精度检测 (float / double)
-│   └─ GCanvas 定位 (ViewProjection 矩阵链路)
+│   └─ PhysX / Chaos 后端判定
 │
-└─ Phase 6: World 链偏移反射发现
-    ├─ UWorld::OwningGameInstance
-    ├─ UWorld::PersistentLevel
-    ├─ UWorld::Levels
-    ├─ UGameInstance::LocalPlayers
-    ├─ ULocalPlayer::PlayerController
-    ├─ APlayerController::Pawn
-    └─ APlayerController::PlayerCameraManager
+├─ ValidatingCore
+│   └─ 核心值缺失 → WaitingForRetry
+│
+├─ DiscoveringWorld
+│   ├─ World / Level / PlayerController / Pawn 链
+│   ├─ FVector 精度
+│   └─ Chaos 偏移
+│
+├─ ValidatingFinal
+│   └─ World 链缺失 → WaitingForRetry
+│
+├─ WaitingForRetry
+│   ├─ 25ms 粒度轮询取消回调
+│   └─ 清空本轮偏移、PE 快照和发现缓存后重新扫描
+│
+└─ Completing → Completed
 ```
 
 所有发现的偏移缓存在 `xrd::Ctx().off` (`UEOffsets` 结构体) 中，后续访问无需重复扫描。
 
-如果安装了 `SetAutoInitCancelCallback()`，那么重试等待和关键扫描阶段都会轮询该回调；一旦返回 `true`，当前初始化会立即终止并执行 `ResetContext()`。
+`GetAutoInitStage()` 可读取上述阶段。`IsInited()` 只会在 `Completed` 时变为 `true`；World/Chaos 发现期间仅初始化线程可访问临时上下文，其他线程不会再看到半初始化状态。
+
+如果安装了 `SetAutoInitCancelCallback()`，重试等待以 25ms 粒度轮询，扫描流程在主要子阶段之间及长枚举循环中轮询。回调只报告取消信号，不直接销毁资源；状态机进入 `Cancelled` 后由事务回滚统一执行 `ResetContext()` 和缓存清理。单个不可中断扫描器运行期间的取消会在该扫描器返回后的最近阶段边界生效。
 
 当某个初始化阶段耗时明显偏长时，日志会输出 `[xrd][Perf] 阶段名 耗时 N ms`，便于快速定位卡在函数/类偏移发现、World 链、FVector 精度检测或 Chaos 初始化等热点。
 
@@ -324,9 +330,20 @@ Xrd-eXternalrEsolve/
 │       │   ├── memory.hpp                       #   IMemoryAccessor 抽象 + WinAPI 实现
 │       │   └── ...                              #   其他可选访问器实现
 │       ├── init/                                # 初始化流程
-│       │   ├── auto_init.hpp                    #   六阶段自动初始化入口
-│       │   ├── init_cancel.hpp                  #   AutoInit 取消回调
-│       │   ├── init_common.hpp                  #   公共扫描逻辑 + FVector 精度检测
+│       │   ├── auto_init.hpp                    #   公共兼容入口
+│       │   ├── init_cancel.hpp                  #   原子取消信号
+│       │   ├── lifecycle/                       #   生命周期控制
+│       │   │   ├── controller.hpp               #     事务式状态机
+│       │   │   ├── state.hpp                    #     阶段状态与查询
+│       │   │   ├── attach.hpp                   #     进程/后端附加
+│       │   │   ├── reset.hpp                    #     重试与回滚边界
+│       │   │   └── diagnostics.hpp              #     完成摘要
+│       │   ├── phases/                          #   单职责扫描阶段
+│       │   │   ├── globals.hpp                  #     GObjects / GNames
+│       │   │   ├── object_offsets.hpp           #     UObject / Property
+│       │   │   ├── runtime_scan.hpp             #     运行时符号 / 物理后端
+│       │   │   ├── vector_precision.hpp         #     FVector 精度
+│       │   │   └── pipeline.hpp                 #     阶段编排
 │       │   ├── init_chaos_scan.hpp              #   Chaos 小偏移自动发现
 │       │   ├── init_chaos.hpp                   #   Chaos 偏移反射发现
 │       │   ├── init_world_chain.hpp             #   World 链偏移反射发现
@@ -417,8 +434,8 @@ Xrd-eXternalrEsolve/
 ## 修结构
 
 - **结构定义**：所有偏移字段集中在 `core/context.hpp` 的 `UEOffsets` 结构体
-- **偏移扫描**：`resolve/` 下按职责分组（globals / uobject / property / runtime），`init/auto_init.hpp` 按阶段串联调用
-- **FVector 精度检测**：通过反射读取 `RelativeLocation.ElementSize`（24=double, 12=float），逻辑在 `init/init_common.hpp`
+- **偏移扫描**：`resolve/` 下按职责分组（globals / uobject / property / runtime），`init/phases/` 负责阶段适配，`init/lifecycle/controller.hpp` 负责状态转换
+- **FVector 精度检测**：通过反射读取 `RelativeLocation.ElementSize`（24=double, 12=float），逻辑在 `init/phases/vector_precision.hpp`
 - **物理后端**：运行时自动检测 PhysX / Chaos，分别由 `physx/` 和 `chaos/` 模块处理
 
 ## 常见问题

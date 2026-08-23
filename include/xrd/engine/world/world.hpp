@@ -192,7 +192,7 @@ namespace detail
 
 inline uptr GetUWorld()
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         return 0;
     }

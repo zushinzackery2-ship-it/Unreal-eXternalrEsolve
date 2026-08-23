@@ -161,6 +161,8 @@ struct Context
     std::unique_ptr<IMemoryAccessor> mem;
 
     bool inited = false;
+    bool initializing = false;
+    DWORD initializationThreadId = 0;
 
     std::mutex mtx;
 };
@@ -175,6 +177,11 @@ inline Context& Ctx()
 inline void ResetContext()
 {
     auto& ctx = Ctx();
+    ctx.inited = false;
+    ctx.initializing = false;
+    ctx.initializationThreadId = 0;
+    ctx.mem.reset();
+
     if (ctx.process)
     {
         CloseHandle(ctx.process);
@@ -185,13 +192,20 @@ inline void ResetContext()
     ctx.sections.clear();
     ctx.off = UEOffsets{};
     ctx.chaosOff = ChaosOffsets{};
-    ctx.mem.reset();
-    ctx.inited = false;
 }
 
 inline bool IsInited()
 {
     return Ctx().inited;
+}
+
+inline bool CanAccessContext()
+{
+    const Context& ctx = Ctx();
+    bool initializationOwner =
+        ctx.initializing &&
+        ctx.initializationThreadId == GetCurrentThreadId();
+    return (ctx.inited || initializationOwner) && ctx.mem != nullptr;
 }
 
 // 线程局部内存访问器覆盖：设置后该线程的 Mem() 返回此指针而非全局通道
@@ -266,7 +280,7 @@ inline const UEOffsets& Off()
 
 inline bool GReadPtr(uptr address, uptr& out)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         out = 0;
         return false;
@@ -276,7 +290,7 @@ inline bool GReadPtr(uptr address, uptr& out)
 
 inline bool GReadI32(uptr address, i32& out)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         out = 0;
         return false;
@@ -286,7 +300,7 @@ inline bool GReadI32(uptr address, i32& out)
 
 inline bool GReadU32(uptr address, u32& out)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         out = 0;
         return false;
@@ -297,7 +311,7 @@ inline bool GReadU32(uptr address, u32& out)
 template<typename T>
 inline bool GReadValue(uptr address, T& out)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         out = T{};
         return false;
@@ -307,7 +321,7 @@ inline bool GReadValue(uptr address, T& out)
 
 inline bool GReadCString(uptr address, std::string& out, std::size_t maxLen = 256)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         out.clear();
         return false;

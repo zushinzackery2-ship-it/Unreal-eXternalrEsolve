@@ -268,7 +268,7 @@ inline bool ResolveName_Array(
 // 主解析函数：ComparisonIndex -> 字符串，带缓存
 inline std::string GetNameFromFName(i32 compIdx, i32 number = 0)
 {
-    if (!IsInited())
+    if (!CanAccessContext())
     {
         return "";
     }
@@ -291,7 +291,7 @@ inline std::string GetNameFromFName(i32 compIdx, i32 number = 0)
 // 从指定地址读取 FName 并解析为字符串
 inline std::string ReadFNameAt(uptr address)
 {
-    if (!IsInited() || !address)
+    if (!CanAccessContext() || !address)
     {
         return "";
     }
