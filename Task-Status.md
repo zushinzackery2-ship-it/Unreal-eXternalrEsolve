@@ -8,8 +8,9 @@
 - [已完成] `ChaosReader` 复用 `world_levels` 的 Level / Actor 枚举
 - [已完成] 保留 PhysX / Chaos 顶层头和公共 API
 - [已完成] 所有本次新增或重构的物理模块头文件均不超过 300 行
-- [待验证] 使用 MinGW C++20 执行公共入口语法验证
-- [待完成] 以 Vernal 身份提交、推送并创建到 `main` 的 draft PR
+- [已完成] 使用 MinGW C++20 对物理模块聚合入口及 9 个兼容头逐一执行语法验证
+- [已完成] 以 Vernal 身份提交并推送 `cursor/refactor-physx-chaos-3800`
+- [待完成] 创建到 `main` 的 draft PR
 
 ## 2. 已解决问题/已完成需求
 
@@ -29,4 +30,6 @@
 - Chaos 子模块：`types/`、`discovery/`、`reader/`
 - `ChaosReader` 的 Actor 枚举入口为显式访问器版本 `GetAllActors(mem, offsets, world, out)`
 - 验证命令：`x86_64-w64-mingw32-g++-posix -std=c++20 -fsyntax-only`
+- 物理模块兼容头聚合验证和逐头独立验证均通过；临时大小写兼容头与私有访问器桩未提交
+- 整体 `xrd.hpp` 的附加验证仍会命中既有 dump 代码的 MinGW `std::ofstream(std::wstring)` 不兼容，与本次物理模块改动无关
 - 仓库中的 SharedMem/Driver 访问器被 `.gitignore` 标为私有；验证时使用了临时接口桩，未引入或提交跨项目代码
