@@ -1,6 +1,6 @@
 <div align="center">
 
-# Xrd-eXternalrEsolve
+# Unreal-eXternalrEsolve
 
 **Unreal Engine 外部进程 SDK 导出与运行时访问库（header-only）**
 
@@ -17,19 +17,42 @@
 
 > [!CAUTION]
 > **免责声明**  
-> 本项目仅用于学习研究 Unreal Engine 内部结构与算法还原，以及在合法授权前提下的游戏 Modding/插件开发学习与验证，不得用于任何违反游戏服务条款或法律法规的行为。  
+> Unreal-eXternalrEsolve 仅用于学习研究 Unreal Engine 内部结构与算法还原，以及在合法授权前提下的游戏 Modding/插件开发学习与验证，不得用于任何违反游戏服务条款或法律法规的行为。  
 > 使用本项目产生的一切后果由使用者自行承担，作者不承担任何责任。  
 > 请在合法合规的前提下使用本项目。
 
 > [!NOTE]
-> **版本兼容性说明**  
-> 本项目面向 Unreal Engine 4/5（Windows x64）。不同 UE 版本在部分结构偏移与布局上存在差异，AutoInit 会自动适配。  
+> **版本兼容性**  
+> 面向 Unreal Engine 4/5（Windows x64）。不同 UE 版本在部分结构偏移与布局上存在差异，`AutoInit()` 会自动适配。  
 > SDK 导出格式对齐 [Dumper-7](https://github.com/Encryqed/Dumper-7)，包含正确的 `#pragma pack` / `alignas` / trailing padding 处理。
 
 > [!IMPORTANT]
 > **代码重构说明**  
 > 当前项目包含相当大量的 AI 重构代码，可能存在维护性问题。  
-> 功能实现集中在 `include/xrd`，入口侧尽量保持薄封装。
+> 功能实现集中在 `include/unreal`，入口侧尽量保持薄封装。
+
+---
+
+## 项目简介
+
+Unreal-eXternalrEsolve 是一个纯头文件的 C++20 库，从**外部进程**读取 Unreal Engine 游戏的内存：不注入 DLL、不修改目标进程，通过 `ReadProcessMemory` 或共享内存通道完成所有访问。
+
+一次 `AutoInit()` 即可自动发现 GObjects / GNames / GWorld / ProcessEvent 等全部关键偏移，随后即可枚举 Actor、读取骨骼、导出与 Dumper-7 格式对齐的 CppSDK，以及读取 PhysX / Chaos 物理场景碰撞数据。
+
+```cpp
+#include <unreal.hpp>
+
+int main()
+{
+    if (!unreal::AutoInit())
+    {
+        return 1;
+    }
+
+    unreal::DumpSdk(L"Output");
+    return 0;
+}
+```
 
 ---
 
@@ -37,7 +60,7 @@
 
 | 功能 | 说明 |
 |:-----|:-----|
-| **Header-Only** | 单一入口 `#include <xrd.hpp>`，无需编译库文件 |
+| **Header-Only** | 单一入口 `#include <unreal.hpp>`，无需编译库文件 |
 | **全自动偏移发现** | `AutoInit()` 通过事务式生命周期状态机扫描 GObjects / GNames / GWorld / ProcessEvent / AppendString / GCanvas / PlayerController / Pawn / CameraManager 等全部关键偏移 |
 | **访问器抽象** | `IMemoryAccessor` 接口解耦算法与内存后端，内置 WinAPI / SharedMem 两套实现，并支持自定义扩展 |
 | **线程安全** | 名称缓存/属性偏移缓存均使用 `shared_mutex`，支持多线程并发读取 |
@@ -54,6 +77,119 @@
 | **Chaos 碰撞读取** | 远程读取 UE5 Chaos 物理场景（FPhysScene_Chaos），通过反射自动发现 BodyInstance/PhysicsProxy/AggGeom 偏移 |
 | **Embree 遮挡检测** | 基于 Embree 的 raycast 遮挡查询，支持碰撞体曲面细分与 BVH 加速 |
 | **碰撞线框渲染** | Box/Sphere/Capsule/ConvexMesh 线框数据生成，支持世界坐标变换与屏幕投影 |
+| **运行时缓存组件** | Actor 跟踪器、枚举缓存、VP/相机状态缓存、场景切换检测、多通道共享内存池、骨骼运行时重扫辅助 |
+
+---
+
+## 快速开始
+
+### 编译环境
+
+- **C++ 标准**：C++20
+- **编译器**：MSVC（Visual Studio 2022）
+- **平台**：Windows x64
+- **链接方式**：静态运行时（/MT）
+
+```bat
+@echo off
+call "D:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" -arch=amd64
+cl /std:c++20 /EHsc /O2 /MT /I"include" /Fe:main.exe main.cpp /link /MACHINE:X64
+```
+
+### 最小示例
+
+```cpp
+#include <unreal.hpp>
+#include <iostream>
+
+int main()
+{
+    if (!unreal::AutoInit())
+    {
+        std::cerr << "AutoInit failed\n";
+        return 1;
+    }
+
+    unreal::DumpSdk(L"Output");
+    return 0;
+}
+```
+
+### 共享内存模式
+
+```cpp
+#include <unreal.hpp>
+
+int main()
+{
+    if (!unreal::AutoInitSharedMem(L"MyGame-Win64-Shipping.exe"))
+    {
+        return 1;
+    }
+
+    return 0;
+}
+```
+
+### 指定进程 / 手动偏移
+
+```cpp
+// 指定进程名
+unreal::AutoInit(L"MyGame-Win64-Shipping.exe");
+
+// 手动设置 RVA（AutoInit 前调用）
+unreal::SetGObjects(0x04952C50);
+unreal::SetGNames(0x04916900);
+```
+
+### 取消 AutoInit
+
+```cpp
+static std::atomic<bool> g_stopRequested = false;
+
+unreal::SetAutoInitCancelCallback([]() -> bool
+{
+    return g_stopRequested.load();
+});
+
+if (!unreal::AutoInit(L"MyGame-Win64-Shipping.exe"))
+{
+    // 如果回调返回 true，AutoInit 会立刻终止并自动 ResetContext()
+}
+```
+
+### 运行时数据访问
+
+```cpp
+#include <unreal.hpp>
+
+int main()
+{
+    unreal::AutoInit(L"MyGame-Win64-Shipping.exe");
+
+    // World 链式访问
+    uptr pawn = unreal::GetAPawn();
+
+    // 按类名筛选 Actor
+    auto zombies = unreal::GetActorsOfClassContains("Zombie");
+    for (uptr actor : zombies)
+    {
+        // 反射式字段读取（偏移自动缓存）
+        uptr mesh = unreal::ReadActorFieldPtr(actor, "Mesh");
+        float hp  = unreal::ReadActorFieldFloat(actor, "Health");
+
+        // 骨骼坐标
+        unreal::FVector headPos;
+        unreal::GetBoneWorldLocation(mesh, 0, headPos);
+
+        // W2S
+        unreal::FVector2D screen;
+        unreal::WorldToScreen(headPos, 1920, 1080, screen);
+    }
+
+    return 0;
+}
+```
 
 ---
 
@@ -107,123 +243,11 @@
 
 ---
 
-## 快速开始
-
-### 编译环境
-
-- **C++ 标准**：C++20
-- **编译器**：MSVC（Visual Studio 2022）
-- **平台**：Windows x64
-- **链接方式**：静态运行时（/MT）
-
-```bat
-@echo off
-call "D:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" -arch=amd64
-cl /std:c++20 /EHsc /O2 /MT /I"include" /Fe:main.exe main.cpp /link /MACHINE:X64
-```
-
-### 最小示例
-
-```cpp
-#include <xrd.hpp>
-#include <iostream>
-
-int main()
-{
-    if (!xrd::AutoInit())
-    {
-        std::cerr << "AutoInit failed\n";
-        return 1;
-    }
-
-    xrd::DumpSdk(L"Output");
-    return 0;
-}
-```
-
-### 共享内存模式
-
-```cpp
-#include <xrd.hpp>
-
-int main()
-{
-    if (!xrd::AutoInitSharedMem(L"MyGame-Win64-Shipping.exe"))
-    {
-        return 1;
-    }
-
-    return 0;
-}
-```
-
-### 指定进程 / 手动偏移
-
-```cpp
-// 指定进程名
-xrd::AutoInit(L"MyGame-Win64-Shipping.exe");
-
-// 手动设置 RVA（AutoInit 前调用）
-xrd::SetGObjects(0x04952C50);
-xrd::SetGNames(0x04916900);
-```
-
-### 取消 AutoInit
-
-```cpp
-static std::atomic<bool> g_stopRequested = false;
-
-xrd::SetAutoInitCancelCallback([]() -> bool
-{
-    return g_stopRequested.load();
-});
-
-if (!xrd::AutoInit(L"MyGame-Win64-Shipping.exe"))
-{
-    // 如果回调返回 true，AutoInit 会立刻终止并自动 ResetContext()
-}
-```
-
-### 运行时数据访问
-
-```cpp
-#include <xrd.hpp>
-
-int main()
-{
-    xrd::AutoInit(L"MyGame-Win64-Shipping.exe");
-
-    // World 链式访问
-    uptr pawn = xrd::GetAPawn();
-
-    // 按类名筛选 Actor
-    auto zombies = xrd::GetActorsOfClassContains("Zombie");
-    for (uptr actor : zombies)
-    {
-        // 反射式字段读取（偏移自动缓存）
-        uptr mesh = xrd::ReadActorFieldPtr(actor, "Mesh");
-        float hp  = xrd::ReadActorFieldFloat(actor, "Health");
-
-        // 骨骼坐标
-        xrd::FVector headPos;
-        xrd::GetBoneWorldLocation(mesh, 0, headPos);
-
-        // W2S
-        xrd::FVector2D screen;
-        xrd::WorldToScreen(headPos, 1920, 1080, screen);
-    }
-
-    return 0;
-}
-```
-
----
-
 ## 访问器架构
 
 ```
 应用代码
-    │  调用 xrd::Mem().Read(...)
+    │  调用 unreal::Mem().Read(...)
     ▼
 IMemoryAccessor（纯虚接口）
     │  Read / Write / ReadBatch
@@ -288,13 +312,13 @@ AutoInit()
 └─ Completing → Completed
 ```
 
-所有发现的偏移缓存在 `xrd::Ctx().off` (`UEOffsets` 结构体) 中，后续访问无需重复扫描。
+所有发现的偏移缓存在 `unreal::Ctx().off` (`UEOffsets` 结构体) 中，后续访问无需重复扫描。
 
 `GetAutoInitStage()` 可读取上述阶段。`IsInited()` 只会在 `Completed` 时变为 `true`；World/Chaos 发现期间仅初始化线程可访问临时上下文，其他线程不会再看到半初始化状态。
 
 如果安装了 `SetAutoInitCancelCallback()`，重试等待以 25ms 粒度轮询，扫描流程在主要子阶段之间及长枚举循环中轮询。回调只报告取消信号，不直接销毁资源；状态机进入 `Cancelled` 后由事务回滚统一执行 `ResetContext()` 和缓存清理。单个不可中断扫描器运行期间的取消会在该扫描器返回后的最近阶段边界生效。
 
-当某个初始化阶段耗时明显偏长时，日志会输出 `[xrd][Perf] 阶段名 耗时 N ms`，便于快速定位卡在函数/类偏移发现、World 链、FVector 精度检测或 Chaos 初始化等热点。
+当某个初始化阶段耗时明显偏长时，日志会输出 `[unreal][Perf] 阶段名 耗时 N ms`，便于快速定位卡在函数/类偏移发现、World 链、FVector 精度检测或 Chaos 初始化等热点。
 
 ---
 
@@ -317,10 +341,10 @@ AutoInit()
 <summary><strong>目录结构</strong></summary>
 
 ```
-Xrd-eXternalrEsolve/
+Unreal-eXternalrEsolve/
 ├── include/
-│   ├── xrd.hpp                                  # 主入口（单一 include）
-│   └── xrd/
+│   ├── unreal.hpp                               # 主入口（单一 include）
+│   └── unreal/
 │       ├── core/                                # 基础设施
 │       │   ├── types.hpp                        #   基本类型 (uptr/i32/u32/FName...)
 │       │   ├── context.hpp                      #   全局上下文 & UEOffsets
@@ -335,14 +359,19 @@ Xrd-eXternalrEsolve/
 │       │   ├── lifecycle/                       #   生命周期控制
 │       │   │   ├── controller.hpp               #     事务式状态机
 │       │   │   ├── state.hpp                    #     阶段状态与查询
+│       │   │   ├── types.hpp                    #     内部生命周期类型
 │       │   │   ├── attach.hpp                   #     进程/后端附加
 │       │   │   ├── reset.hpp                    #     重试与回滚边界
 │       │   │   └── diagnostics.hpp              #     完成摘要
 │       │   ├── phases/                          #   单职责扫描阶段
+│       │   │   ├── sections.hpp                 #     PE 段缓存阶段
 │       │   │   ├── globals.hpp                  #     GObjects / GNames
 │       │   │   ├── object_offsets.hpp           #     UObject / Property
+│       │   │   ├── enum_offsets.hpp             #     UEnum::Names / UField::Next
 │       │   │   ├── runtime_scan.hpp             #     运行时符号 / 物理后端
 │       │   │   ├── vector_precision.hpp         #     FVector 精度
+│       │   │   ├── validation.hpp               #     关键值验证
+│       │   │   ├── phase_support.hpp            #     阶段公共工具
 │       │   │   └── pipeline.hpp                 #     阶段编排
 │       │   ├── init_chaos_scan.hpp              #   Chaos 扫描兼容入口
 │       │   ├── init_chaos.hpp                   #   Chaos 初始化兼容入口
@@ -387,12 +416,13 @@ Xrd-eXternalrEsolve/
 │       ├── resolve/                             # 偏移扫描器
 │       │   ├── globals/                         #   全局指针扫描
 │       │   │   ├── scan_gobjects.hpp            #     GObjects 定位
+│       │   │   ├── scan_gobjects_validate.hpp   #     GObjects 候选验证
 │       │   │   ├── scan_gnames.hpp              #     GNames 定位
 │       │   │   ├── scan_world.hpp               #     GWorld 定位
 │       │   │   └── scan_debug_canvas.hpp        #     GCanvas 扫描
 │       │   ├── uobject/                         #   UObject 偏移扫描
 │       │   │   ├── scan_offsets.hpp             #     UObject 基础偏移
-│       │   │   ├── scan_struct_offsets.hpp       #     UStruct 偏移
+│       │   │   ├── scan_struct_offsets.hpp      #     UStruct 偏移
 │       │   │   ├── scan_ufunction_offsets.hpp   #     UFunction 偏移
 │       │   │   └── scan_uclass_offsets.hpp      #     UClass 偏移
 │       │   ├── property/                        #   Property 偏移扫描 (6 个文件)
@@ -429,8 +459,13 @@ Xrd-eXternalrEsolve/
 │       │       ├── dump_function_flags.hpp      #     函数标志位
 │       │       ├── dump_property_flags.hpp      #     属性标志位
 │       │       └── gen/                         #     预生成基础类型头文件 (11 个)
-│       └── runtime/                             # 运行时缓存
-│           └── actor_enumeration_cache.hpp      #   Actor 全量枚举缓存
+│       └── runtime/                             # 运行时缓存与辅助
+│           ├── actor_enumeration_cache.hpp      #   Actor 全量枚举缓存
+│           ├── actor_tracker.hpp                #   Actor 跟踪器
+│           ├── bone_runtime.hpp                 #   骨骼运行时重扫辅助
+│           ├── channel_pool.hpp                 #   多通道共享内存池
+│           ├── scene_watch.hpp                  #   场景切换检测
+│           └── view_state.hpp                   #   VP / 相机状态缓存
 ├── LICENSE                                      # MIT
 └── README.md
 ```
@@ -439,12 +474,13 @@ Xrd-eXternalrEsolve/
 
 ---
 
-## 修结构
+## 设计说明
 
 - **结构定义**：所有偏移字段集中在 `core/context.hpp` 的 `UEOffsets` 结构体
 - **偏移扫描**：`resolve/` 下按职责分组（globals / uobject / property / runtime），`init/phases/` 负责阶段适配，`init/lifecycle/controller.hpp` 负责状态转换
 - **FVector 精度检测**：通过反射读取 `RelativeLocation.ElementSize`（24=double, 12=float），逻辑在 `init/phases/vector_precision.hpp`
 - **物理后端**：运行时自动检测 PhysX / Chaos；类型、发现、拓扑与读取职责分别位于 `physx/` 和 `chaos/` 的子目录，旧入口仅负责兼容 re-export
+- **代码风格**：大括号使用 Allman 风格（另起一行）
 
 ## 常见问题
 
@@ -461,6 +497,6 @@ Xrd-eXternalrEsolve/
 
 <div align="center">
 
-**Platform:** Windows x64 | **License:** MIT
+**Unreal-eXternalrEsolve** | **Platform:** Windows x64 | **License:** MIT
 
 </div>
